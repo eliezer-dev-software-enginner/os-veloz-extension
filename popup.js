@@ -1,14 +1,10 @@
 const DEFAULTS = {
-  cliente: '',
-  projeto: '',
   jornada: '9',
   intervalo: 500
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
   const form = document.getElementById('configuracao');
-  const cliente = document.getElementById('cliente');
-  const projeto = document.getElementById('projeto');
   const jornada = document.getElementById('jornada');
   const intervalo = document.getElementById('intervalo');
   const salvar = document.getElementById('salvar');
@@ -23,8 +19,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function lerFormulario() {
     return {
-      cliente: cliente.value.trim(),
-      projeto: projeto.value.trim(),
       jornada: jornada.value,
       intervalo: Number(intervalo.value)
     };
@@ -36,8 +30,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   try {
     const dados = await chrome.storage.local.get(DEFAULTS);
-    cliente.value = dados.cliente;
-    projeto.value = dados.projeto;
     jornada.value = dados.jornada;
     intervalo.value = dados.intervalo;
   } catch {
@@ -60,10 +52,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   form.addEventListener('submit', async event => {
     event.preventDefault();
     const configuracao = lerFormulario();
-    if (!configuracao.cliente || !configuracao.projeto) return;
+    if (!form.reportValidity()) return;
 
     preencher.disabled = true;
-    mensagem('Preenchendo a ordem de serviço…');
+    mensagem('Preenchendo os períodos…');
     try {
       await chrome.storage.local.set(configuracao);
       const [aba] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -125,26 +117,12 @@ async function preencherOrdemServico(configuracao) {
     return null;
   }
 
-  async function selecionarOpcao(trigger, texto) {
-    if (!trigger) return false;
-    trigger.click();
-    const opcao = await aguardar(() => {
-      const opcoes = [...document.querySelectorAll('[role="option"]')];
-      return opcoes.find(item => item.textContent.trim() === texto) ||
-        opcoes.find(item => item.textContent.includes(texto));
-    });
-    if (!opcao) return false;
-    opcao.click();
-    await pausa(intervalo);
-    return true;
+  if (location.hostname !== 'portalconsultor.dgbtecnologia.com.br' ||
+      location.pathname.replace(/\/$/, '') !== '/work-orders') {
+    return { ok: false, encontrouTela: false, mensagem: 'Abra o cadastro de OS no Portal Consultor.' };
   }
-
-  const clienteTrigger = getTriggerByLabel('Cliente');
-  if (!clienteTrigger) {
-    return { ok: false, encontrouTela: false, mensagem: 'Campo Cliente não encontrado nesta página.' };
-  }
-  if (!await selecionarOpcao(clienteTrigger, configuracao.cliente)) {
-    return { ok: false, encontrouTela: true, mensagem: `Cliente “${configuracao.cliente}” não encontrado.` };
+  if (!getPeriodCards().length) {
+    return { ok: false, encontrouTela: false, mensagem: 'Tela de períodos não encontrada nesta página.' };
   }
 
   let periodos = getPeriodCards();
@@ -167,19 +145,52 @@ async function preencherOrdemServico(configuracao) {
 
   const fim = configuracao.jornada === '8' ? '17:00' : '18:00';
   const horarios = { 1: ['08:00', '12:00'], 2: ['13:00', fim] };
-  for (const { numero, card } of periodos.filter(item => item.numero === 1 || item.numero === 2)) {
-    if (!await selecionarOpcao(getTriggerByLabel('Projeto', card), configuracao.projeto)) {
-      return { ok: false, encontrouTela: true, mensagem: `Projeto não encontrado no período ${numero}.` };
+  const chave = '__osVelozPeriodos';
+  window[chave]?.();
+  const projetos = new Map();
+  let timer;
+
+  function preencherHorarios(forcar = false) {
+    if (getPeriodCards().length === 1) {
+      [...document.querySelectorAll('button')]
+        .find(botao => botao.textContent.trim() === 'Adicionar Período')?.click();
     }
-    const [inicioInput, fimInput] = card.querySelectorAll('input[type="time"]');
-    const [inicio, termino] = horarios[numero];
-    if (!inicioInput || !fimInput) {
-      return { ok: false, encontrouTela: true, mensagem: `Horários do período ${numero} não encontrados.` };
+    for (const { numero, card } of getPeriodCards().filter(item => horarios[item.numero])) {
+      const projeto = getTriggerByLabel('Projeto', card)?.textContent || '';
+      const anterior = projetos.get(numero);
+      const alterouProjeto = !anterior || anterior.card !== card || anterior.projeto !== projeto;
+      projetos.set(numero, { card, projeto });
+      for (let indice = 0; indice < 2; indice++) {
+        // Reconsulta os campos porque o React pode renderizar o periodo novamente.
+        const input = card.querySelectorAll('input[type="time"]')[indice];
+        if (input && (forcar || alterouProjeto || !input.value) && input.value !== horarios[numero][indice]) {
+          setNativeValue(input, horarios[numero][indice]);
+        }
+      }
     }
-    setNativeValue(inicioInput, inicio);
-    setNativeValue(fimInput, termino);
-    await pausa(intervalo);
   }
 
-  return { ok: true, encontrouTela: true, mensagem: `OS preenchida para ${configuracao.jornada} horas de trabalho.` };
+  function agendar() {
+    if (timer) return;
+    timer = setTimeout(() => {
+      timer = null;
+      preencherHorarios();
+    }, intervalo);
+  }
+
+  const observer = new MutationObserver(agendar);
+  observer.observe(document.body, {
+    subtree: true, childList: true, characterData: true,
+    attributes: true, attributeFilter: ['value']
+  });
+  window[chave] = () => { observer.disconnect(); clearTimeout(timer); };
+  preencherHorarios(true);
+  await pausa(intervalo);
+  const completos = getPeriodCards().filter(item => horarios[item.numero]).length === 2 &&
+    getPeriodCards().filter(item => horarios[item.numero]).every(({ numero, card }) =>
+      card.querySelectorAll('input[type="time"]').length === 2 &&
+      [...card.querySelectorAll('input[type="time"]')].every((input, indice) => input.value === horarios[numero][indice]));
+  return { ok: completos, encontrouTela: true, mensagem: completos
+    ? `Dois períodos preenchidos. Os horários serão reaplicados ao trocar o projeto. Nenhuma OS foi salva.`
+    : 'Confira os horários dos dois períodos. Nenhuma OS foi salva.' };
 }
