@@ -12,6 +12,8 @@ Não há build nem dependências de pacote.
 
 ## Uso
 
+O botão **Abrir site da OS ↗** abre o cadastro do Portal Consultor em uma nova aba, sem preencher ou salvar a OS.
+
 1. Abra o cadastro da OS no portal e escolha o cliente desejado.
 2. Abra a extensão e escolha a jornada: **9 horas** (`08:00–12:00` e `13:00–18:00`) ou **8 horas** (`08:00–12:00` e `13:00–17:00`).
 3. Clique em **Preencher períodos**. O segundo período é adicionado se necessário; os horários dos períodos 1 e 2 são preenchidos.

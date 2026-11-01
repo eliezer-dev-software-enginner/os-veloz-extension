@@ -34,3 +34,7 @@ button:disabled { cursor: wait; opacity: .65; }
 #status { min-height: 17px; margin: 3px 1px 0; color: #526077; font-size: 12px; text-align: center; }
 #status.success { color: #14704f; }
 #status.error { color: #b13838; }
+
+.portal-link { display: flex; align-items: center; justify-content: center; box-sizing: border-box; min-height: 40px; margin-bottom: 14px; padding: 8px; border-radius: 9px; text-decoration: none; font-weight: 700; }
+.portal-link:hover { background: #dae4f1; }
+.portal-link:focus-visible { outline: 2px solid #316bd6; outline-offset: 3px; }
